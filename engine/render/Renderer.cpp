@@ -96,19 +96,18 @@ void Renderer::submit(const RenderCommand& cmd)
 		if (!bgfx::isValid(mat.program)) cerr << "  - Shader Program is INVALID" << endl;
 		return;
 	}
-
+	
 	bgfx::setTransform(ent.transform);
 	bgfx::setVertexBuffer(0, m.vbh);
 	bgfx::setIndexBuffer(m.ibh);
 	bgfx::setUniform(m_u_color, &mat.color);
-	bgfx::setState(BGFX_STATE_DEFAULT);
+	//bgfx::setState(BGFX_STATE_DEFAULT);
 
-	/*uint64_t state = BGFX_STATE_WRITE_RGB 
+	uint64_t state = BGFX_STATE_WRITE_RGB 
                    | BGFX_STATE_WRITE_A 
 				   | BGFX_STATE_WRITE_Z
 				   | BGFX_STATE_DEPTH_TEST_LESS
-                   | BGFX_STATE_PT_LINES;
-	bgfx::setState(state);*/
+                   | BGFX_STATE_PT_LINES; bgfx::setState(state);
 	bgfx::submit(0, mat.program);
 }
 
@@ -173,22 +172,18 @@ void Renderer::updateCamera(float _dx, float _dy, bool _keys[6])
         bx::cos(m_pitch) * bx::cos(m_yaw)
     };
 
-    // 3. Calcular vectores Right y Up
     bx::Vec3 up = { 0.0f, 1.0f, 0.0f };
     bx::Vec3 right = bx::normalize(bx::cross(up, forward));
     
-    // 4. Mover posición según teclado (W:0, S:1, A:2, D:3, Q:4, E:5)
     if (_keys[0]) m_camPos = bx::add(m_camPos, bx::mul(forward, m_moveSpeed)); // W
     if (_keys[1]) m_camPos = bx::sub(m_camPos, bx::mul(forward, m_moveSpeed)); // S
     if (_keys[2]) m_camPos = bx::add(m_camPos, bx::mul(right, m_moveSpeed));   // A
     if (_keys[3]) m_camPos = bx::sub(m_camPos, bx::mul(right, m_moveSpeed));   // D
 
-    // 5. Re-calcular la matriz de vista
     float view[16];
-    bx::Vec3 at = bx::add(m_camPos, forward); // El punto al que miramos
+    bx::Vec3 at = bx::add(m_camPos, forward);
     bx::mtxLookAt(view, m_camPos, at, up);
 
-    // 6. Proyección (puedes mantener la de tu setupView actual)
     float proj[16];
     bx::mtxProj(proj, 60.0f, float(m_width)/float(m_height), 0.1f, 100.0f, bgfx::getCaps()->homogeneousDepth);
 
