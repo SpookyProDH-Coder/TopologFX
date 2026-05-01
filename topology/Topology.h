@@ -61,40 +61,6 @@ class Topology
             return m_X;
         }
 
-        void load(const string& filename) const
-        {
-            static_assert(is_trivially_copyable_v<Atom>, "[!] Error: Atom must be binary-computable.");
-            namespace fs = filesystem;
-
-            if (!fs::exists(filename))
-            {
-                cerr << "[!] Error: File \"" << filename << "\" not found." << endl;
-                return;
-            }
-
-            uintmax_t byteSize = fs::file_size(filename);
-
-            if (byteSize % sizeof(Atom) != 0)
-                cerr << "[!] File size is not correct." << endl;
-
-            size_t numElements = byteSize / sizeof(Atom);
-
-            vector<Atom> buffer(numElements);
-
-            ifstream f(filename, ios::binary);
-
-            if (!f)
-                cerr << "[!] Error: Could not load file named \"" << filename << "\"." << endl;
-            /*else
-            {
-                if (f.read(reinterpret_cast<char*>(buffer.data()), byteSize))
-                    Topology<vector<Atom>>::push(move(buffer));
-
-                else
-                    std::cerr << "[!] Error: Reading file" << filename << "\" failed" << endl;
-            }*/
-        }
-
     protected:
         bx::AllocatorI* m_allocator;
         SetX m_X;
