@@ -19,7 +19,6 @@ class MetricSpace : public Topology<Vector, UsualTopologyPolicy>
         vector<unsigned> getNeighborhood(unsigned) const override;
 
         void generate(unsigned, float);
-        void load(ostream&);
 
     private:
         float m_norm;
