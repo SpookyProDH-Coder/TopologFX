@@ -45,15 +45,24 @@ float MetricSpace::distance(uint32_t _idxA, uint32_t _idxB) const
 void MetricSpace::generate(unsigned _numElements, float _range)
 {
     Topology<Vector, UsualTopologyPolicy>::generate(_numElements);
-    float x, y, z;
 
-    for (unsigned i = 0; i < _numElements; ++i)
+    float x, y, step = 0.2f;
+    unsigned i, j, n, idx;
+    n = (unsigned)sqrt(_numElements);
+    
+    for (i = 0; i < n; i++)
     {
-        x = ((float)rand() / RAND_MAX) * 2.0f * _range - _range;
-        y = ((float)rand() / RAND_MAX) * 2.0f * _range - _range;
-        z = ((float)rand() / RAND_MAX) * 2.0f * _range - _range;
+        for (j = 0; j < n; j++)
+        {
+            idx = j * n + i;
 
-        m_X.elements[i] = { x, y, z };
+            if (idx < _numElements)
+            {
+                x = (i * step) - _range;
+                y = (j * step) - _range;
+                m_X.elements[idx] = {x, y, 0.0f};
+            }
+        }
     }
 }
 
