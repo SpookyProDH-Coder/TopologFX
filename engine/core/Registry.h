@@ -3,6 +3,7 @@
 
 #include "HashTable.h"
 #include <bgfx/bgfx.h>
+#include <bx/math.h>
 
 struct Mesh
 {
@@ -26,7 +27,17 @@ struct Entity
 {
     unsigned mesh_id;
     unsigned material_id;
+
+	bx::Vec3 position = { 0.0f, 0.0f, 0.0f };
+    bx::Vec3 scale    = { 1.0f, 1.0f, 1.0f };
+    bx::Quaternion rotation = {0.0f, 0.0f, 0.0f, 1.0f};
+
     float transform[16];
+	
+	Entity() : mesh_id(0), material_id(0)
+	{
+		bx::mtxIdentity(transform);
+	}
 };
 
 struct LightingPreset
