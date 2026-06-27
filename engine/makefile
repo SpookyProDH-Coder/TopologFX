@@ -1,54 +1,67 @@
-# --- Configuración de Compilador y Flags ---
+# --- Compiler & Flags configuration  ---
+# Made By: SpookyProDH-Coder
 CXX      := g++
 INCLUDES := -Icore \
 			-Irender \
 			-Ithird_party/bx/include \
 			-Ithird_party/bimg/include \
-			-Ithird_party/bgfx/include
-CXXFLAGS := -std=c++20 -Wall -Wextra -O2 \
-            $(INCLUDES) \
-			-DBX_CONFIG_DEBUG=0 \
-            -D__STDC_CONSTANT_MACROS \
-            -D__STDC_FORMAT_MACROS \
+			-Ithird_party/bgfx/include \
+			-Ithird_party/bgfx/3rdparty/dear-imgui \
+			-Ithird_party/bgfx/3rdparty/dear-imgui/backends \
+		-Ithird_party/bgfx/examples/common \
+		-Ithird_party/bgfx/3rdparty \
+		-Ithird_party/bimg/3rdparty
 
-# --- Herramientas de bgfx ---
-# Asegúrate de que esta ruta sea correcta en tu sistema
+CXXFLAGS := -std=c++23 -O3 -Wall -Wextra $(INCLUDES) \
+			-DBX_CONFIG_DEBUG=0 \
+			-D__STDC_CONSTANT_MACROS \
+			-D__STDC_FORMAT_MACROS \
+
+# --- Bgfx tools ---
 SHADERC := ./third_party/bgfx/.build/linux64_gcc/bin/shadercRelease
 
-# --- Librerías ---
+# --- Libraries ---
 LDLIBS  := \
-    third_party/bgfx/.build/linux64_gcc/bin/libbgfxRelease.a \
-    third_party/bgfx/.build/linux64_gcc/bin/libbxRelease.a \
-    third_party/bgfx/.build/linux64_gcc/bin/libbimgRelease.a \
-    -lglfw -lGL -lX11 -lwayland-egl -lwayland-client -lpthread -ldl
+	third_party/bgfx/.build/linux64_gcc/bin/libbgfxRelease.a \
+	third_party/bgfx/.build/linux64_gcc/bin/libbxRelease.a \
+	third_party/bgfx/.build/linux64_gcc/bin/libbimgRelease.a \
+	-lglfw -lGL -lX11 -lwayland-egl -lwayland-client -lpthread -ldl
 
-# --- Archivos y Rutas ---
+# --- Routes & Files ---
 CORE_DIR := core
 RENDER_DIR := render
 SHADERS_DIR := shaders
 TOPOLOGY_DIR := ../topology
 
+IMGUI_SRCS := third_party/bgfx/3rdparty/dear-imgui/imgui.cpp \
+			  third_party/bgfx/3rdparty/dear-imgui/imgui_draw.cpp \
+			  third_party/bgfx/3rdparty/dear-imgui/imgui_tables.cpp \
+			  third_party/bgfx/3rdparty/dear-imgui/imgui_widgets.cpp \
+
+BGFX_IMGUI_SRC := third_party/bgfx/examples/common/imgui/imgui.cpp
+
 SRCS := main.cpp \
-		$(CORE_DIR)/Registry.cpp \
 		$(RENDER_DIR)/Renderer.cpp \
 		$(RENDER_DIR)/Primitives.cpp \
-		$(TOPOLOGY_DIR)/MetricSpace.cpp
+		$(TOPOLOGY_DIR)/MetricSpace.cpp \
+		$(CORE_DIR)/SceneManager.cpp \
+		$(CORE_DIR)/EntityInspector.cpp \
+		$(CORE_DIR)/utils/EngineConsole.cpp \
+		$(IMGUI_SRCS) \
+		$(BGFX_IMGUI_SRC)
 		
 OBJS := $(SRCS:.cpp=.o)
 
-# Archivo de definición de interfaz (Obligatorio para bgfx)
 VARYING_DEF := $(SHADERS_DIR)/varying.def.sc
 
-# Escaneo de shaders
 VS_SOURCES := $(wildcard $(SHADERS_DIR)/vs_*.sc)
 FS_SOURCES := $(wildcard $(SHADERS_DIR)/fs_*.sc)
 
-# Los binarios se generarán en la misma carpeta de shaders
 SHADER_BINS := $(VS_SOURCES:.sc=.bin) $(FS_SOURCES:.sc=.bin)
 
-TARGET := engine_demo
+TARGET := engine.out
 
-# --- Reglas Principales ---
+# --- Main Rules ---
 
 all: $(SHADER_BINS) $(TARGET)
 
@@ -60,11 +73,10 @@ $(TARGET): $(OBJS)
 	@echo "[*] Compilando objeto: $<"
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-# --- Reglas de Compilación de Shaders ---
+# --- Shader Compilation rules ---
 
-# Perfil '120' es para OpenGL 2.1 (muy compatible)
-# Perfil '430' o '150' si usas características modernas de GL
-# -i añade carpetas para encontrar #include <bgfx_shader.sh>
+# Profile '120': OpenGL 2.1
+# Profile '430' or '150': Modern GL
 
 $(SHADERS_DIR)/vs_%.bin: $(SHADERS_DIR)/vs_%.sc $(VARYING_DEF)
 	@echo "[*] Compilando Vertex Shader: $<"
