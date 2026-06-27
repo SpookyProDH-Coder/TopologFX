@@ -1,4 +1,19 @@
+/******* Primitives.cpp ***************************************************/ /**
+ *
+ * @file Primitives.cpp
+ *
+ * Implementation of geometric and topological primitive generators
+ * This file contaions algorithms to map abstract algebraic topology structures
+ * (quotient spaces, simplicial complexes) into geometry buffers for GPU
+ * 
+ * @version 1.0
+ * @author SpookyProDH-Coder
+ * @date 16/06/2026
+ ***************************************************************************/
+
 #include <vector>
+#include <cassert>
+#include <map>
 
 #include "Primitives.h"
 #include "../../topology/TopologyPolicies.h"
@@ -6,99 +21,147 @@
 
 using namespace std;
 
+/// Initialize bgfx layout descriptor 
 bgfx::VertexLayout PosColorVertex::ms_layout;
 
-Mesh Primitives::MS_Plane(const MetricSpace& ms, float size) 
+namespace Primitives
 {
-    PosColorVertex::init();
-    const unsigned WHITE = 0xffffffff;
-    const auto& setX = ms.getSet();
-    float half = size / 2.0f;
-    vector<PosColorVertex> vertex;
-    vector<unsigned> indexes;
-    float px, py, pz;
-    unsigned i, offset;
-
-    for (i = 0; i < setX.count; ++i) 
+    inline uint32_t colorSurface(unsigned id, bool isOrientable = false) 
     {
-        px = setX.elements[i].x;
-        py = setX.elements[i].y;
-        pz = setX.elements[i].z;
-        offset = (unsigned)vertex.size();
+        uint32_t h = id * 2654435761u;
+        
+        // Base intensity is in the range ]128, 255[
+        uint8_t intensity = 128 + ((h >> 16) & 0x7F);
+        
+        uint8_t noise = (h >> 8) & 0x3F; 
 
-        vertex.push_back({px-half, py+half, pz, WHITE});
-        vertex.push_back({px+half, py+half, pz, WHITE});
-        vertex.push_back({px-half, py-half, pz, WHITE});
-        vertex.push_back({px+half, py-half, pz, WHITE});
-
-        indexes.push_back(offset + 0); indexes.push_back(offset + 1); indexes.push_back(offset + 2);
-        indexes.push_back(offset + 1); indexes.push_back(offset + 3); indexes.push_back(offset + 2);
+        // ABGR format: 0xAABBGGRR
+        if (isOrientable)
+            return 0xFF000000u | (noise << 16) | (noise << 8) | intensity;  // red
+        else
+            return 0xFF000000u | (intensity << 16) | (noise << 8) | noise; // blue
     }
 
-    return Primitives::buildMesh(vertex, indexes);
-}
-
-Mesh Primitives::QT_Space(const MetricSpace& ms, unsigned resolution, const QuotientPolicy& policy, const Embedding<bx::Vec3>& embedding)
-{
-    ParametricGrid grid(resolution+1, resolution+1);
-    unsigned i, j, i0, i1, i2, i3;
-
-    const auto& setX = ms.getSet();
-    
-    for (i = 0; i < setX.count; i++)
+    inline uint32_t colorDistance(float distance, float max_distance = 15.0f) 
     {
-        float u = (float)(i % resolution) / (float)(resolution - 1);
-        float v = (float)(i / resolution) / (float)(resolution - 1);
-
-        grid.uv_points.push_back({u, v});
+        float t = bx::clamp(distance / max_distance, 0.0f, 1.0f);
+        
+        // Gradiente: Rojo (0) -> Amarillo -> Verde -> Cyan -> Azul (1)
+        uint8_t r = (uint8_t)(bx::max(0.0f, 1.0f - t * 2.0f) * 255.0f);
+        uint8_t g = (uint8_t)(bx::max(0.0f, 1.0f - bx::abs(t - 0.5f) * 2.0f) * 255.0f);
+        uint8_t b = (uint8_t)(bx::max(0.0f, (t - 0.5f) * 2.0f) * 255.0f);
+        
+        return 0xFF000000 | (b << 16) | (g << 8) | r; // ABGR format
     }
 
-    for (i = 0; i < resolution-1; i++)
+    Mesh Surface(const MetricSpace& space, unsigned U, unsigned V, bool useHeatmap = false)
     {
-        for (j = 0; j < resolution-1; j++)
+        unsigned totalUniqueVertices, v, u, logicalGridIdx, contiguousVertexId, numIndices, offset;
+        unsigned *indices;
+        const TopologyPolicies::SimplicialComplex& complex = space.getComplex(); 
+        TopologyPolicies::EmbeddingFunction embedding = space.getPolicy().getEmbedding();
+        TopologyPolicies::Vec3 coords;
+
+        ///< Total number of unique points after applying the quotient topology.
+        totalUniqueVertices = space.getSet().count;
+        
+        if (totalUniqueVertices == 0)
+            return Mesh();
+
+        U = complex.gridU;
+        V = complex.gridV;
+
+        bx::AllocatorI* allocator = space.getSet().allocator;
+
+        PosColorVertex* vertices = static_cast<PosColorVertex*>(bx::alloc(allocator, totalUniqueVertices * sizeof(PosColorVertex)));
+        bool* posInitialized = static_cast<bool*>(bx::alloc(allocator, totalUniqueVertices * sizeof(bool)));
+
+        /// 2. Index Isomorphism Map : X/~ -> Continuous GPU memory range [0...N-1]
+        bx::memSet(posInitialized, 0, totalUniqueVertices * sizeof(bool));
+
+        /// 4. Chromatic discriminant of complex's orientability pixel drawing (funky name haha)
+        bool isOrientable = complex.isOrientable;
+
+        /// 3. Parametric Inmersion Geometrization of the compact mainfold.
+
+        float pv, pu;
+
+        for (v = 0; v <= V; v++) 
         {
-            i0 = j * (resolution+1) + i;
-            i1 = j * (resolution+1) + i+1;
-            i2 = (j+1) * (resolution+1) + i;
-            i3 = (j+1) * (resolution+1) + i+1;
+            pv = 2.0f * ((float)v / V) - 1.0f;
 
-            grid.indexes.push_back(i0);
-            grid.indexes.push_back(i1);
-            grid.indexes.push_back(i2);
+            for (u = 0; u <= U; u++) 
+            {
+                logicalGridIdx = v * (U + 1) + u;
+                contiguousVertexId = complex.quotientMap[logicalGridIdx];
 
-            grid.indexes.push_back(i1);
-            grid.indexes.push_back(i3);
-            grid.indexes.push_back(i2);
+                if (!posInitialized[contiguousVertexId]) 
+                {
+                    pu = 2.0f * ((float)u / U) - 1.0f;
+
+                    coords = embedding(pu, pv);
+                    
+                    vertices[contiguousVertexId].x = coords.x;
+                    vertices[contiguousVertexId].y = coords.y;
+                    vertices[contiguousVertexId].z = coords.z;
+
+                    if (useHeatmap)
+                        vertices[contiguousVertexId].abgr = colorDistance(space.distance(0, contiguousVertexId), 10.0f);
+                    else
+                        vertices[contiguousVertexId].abgr = colorSurface(contiguousVertexId, isOrientable);
+                        
+                    posInitialized[contiguousVertexId] = true;
+                }
+            }
         }
+        bx::free(allocator, posInitialized);
+
+        numIndices = complex.triangles.size() * 3;
+        indices = static_cast<unsigned*>(bx::alloc(allocator, numIndices * sizeof(unsigned)));
+        offset = 0;
+
+        for (const TopologyPolicies::Simplex2D& tri : complex.triangles) 
+        {
+            indices[offset++] = tri.v0;
+            indices[offset++] = tri.v1;
+            indices[offset++] = tri.v2;
+        }
+
+        return buildMesh(vertices, totalUniqueVertices, indices, numIndices, allocator);
     }
 
-    policy.applyRule(grid);
-    vector<PosColorVertex> final_vertices(setX.count);
-
-    KleinParameters kp;
-    MorbiusParameters mp;
-    for (i = 0; i < setX.count; i++)
+    Mesh buildMesh(const PosColorVertex* vertices, unsigned numVertices, const unsigned* indices, unsigned numIndices, bx::AllocatorI* allocator)
     {
-        Vec2 uv = grid.uv_points[i];
-        bx::Vec3 pos3D = embedding.map(uv, kp, mp);
+        Mesh mesh;
 
-        final_vertices[i].x = pos3D.x;
-        final_vertices[i].y = pos3D.y;
-        final_vertices[i].z = pos3D.z;
+        const bgfx::Memory* vMem = bgfx::makeRef(
+            vertices, numVertices * sizeof(PosColorVertex),
+            [](void* _ptr, void* _userData) {bx::free((bx::AllocatorI*)_userData, _ptr);},
+            allocator
+        );
 
-        final_vertices[i].abgr = 0xFF8F09FF;
+        const bgfx::Memory* iMem = bgfx::makeRef(
+            indices, numIndices * sizeof(unsigned),
+            [](void* _ptr, void* _userData) { bx::free((bx::AllocatorI*)_userData, _ptr); },
+            allocator
+        );
+
+        mesh.vbh = bgfx::createDynamicVertexBuffer(vMem, PosColorVertex::ms_layout);
+        mesh.ibh = bgfx::createDynamicIndexBuffer(iMem, BGFX_BUFFER_INDEX32);
+
+        return mesh;
     }
-    return Primitives::buildMesh(final_vertices, grid.indexes);
-}
 
-Mesh Primitives::buildMesh(const vector<PosColorVertex>& vertex, const vector<unsigned>& indexes)
-{
-    Mesh mesh;
-    mesh.vbh = bgfx::createVertexBuffer(
-        bgfx::copy(vertex.data(), sizeof(PosColorVertex) * vertex.size()), 
-        PosColorVertex::ms_layout);
-    mesh.ibh = bgfx::createIndexBuffer(
-        bgfx::copy(indexes.data(), sizeof(unsigned) * indexes.size()),
-         BGFX_BUFFER_INDEX32);
-    return mesh;
+    void updateDynamicMesh(Mesh& mesh, const PosColorVertex* new_vertices, unsigned numVertices, bx::AllocatorI* allocator)
+    {
+        assert(!bgfx::isValid(mesh.vbh));
+
+        const bgfx::Memory* vMem = bgfx::makeRef(
+            new_vertices, numVertices * sizeof(PosColorVertex),
+            [](void* _ptr, void* _userData) { bx::free((bx::AllocatorI*)_userData, _ptr); },
+            allocator
+        );
+
+        bgfx::update(mesh.vbh, 0, vMem);
+    }
 }
